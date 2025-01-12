@@ -1,0 +1,225 @@
+#include <DHT.h>
+#include <LiquidCrystal.h>
+
+
+#define DHTPIN 12         // Pin para el sensor DHT11
+#define DHTTYPE_DHT11 DHT11
+#define DHTTYPE_DHT22 DHT22
+#define DHT22PIN 10       // Pin para el sensor DHT22
+#define RELAY_PIN A3  // Pin del relé
+
+DHT dht11(DHTPIN, DHTTYPE_DHT11); // Para el sensor DHT11
+DHT dht22(DHT22PIN, DHTTYPE_DHT22); // Para el sensor DHT22
+LiquidCrystal lcd(3, 4, 5, 6, 7, 8);
+
+const int buttonUpPin = 11;
+const int buttonDownPin = A0;
+const int enterButtonPin = A1; // Nuevo botón enter
+const int skypeButtonPin = A2; // Nuevo botón Skype
+int lineToShow = 0;
+int lastButtonStateUp = HIGH;
+int lastButtonStateDown = HIGH;
+int lastEnterButtonState = HIGH; // Estado del último botón enter
+int lastSkypeButtonState = HIGH; // Estado del último botón Skype
+float temperatureSetpoint = 25.0;  // Temperatura de consigna inicial
+bool configurationMode = false; // Modo configuración
+bool fanMode = false;  // Modo de control del ventilador
+
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  lcd.begin(16, 2);
+  pinMode(RELAY_PIN, OUTPUT);  // Configurar el pin del relé como salida
+  analogWrite(9, 32);
+  pinMode(buttonUpPin, INPUT_PULLUP);
+  pinMode(buttonDownPin, INPUT_PULLUP);
+  pinMode(enterButtonPin, INPUT_PULLUP); // Configurar el botón enter como entrada con pull-up
+  pinMode(skypeButtonPin, INPUT_PULLUP); // Configurar el botón Skype como entrada con pull-up
+}
+
+
+void loop() {
+  delay(200);
+
+  // Lecturas para el sensor DHT11
+  float humidityDHT11 = dht.readHumidity();
+  float temperatureDHT11 = dht.readTemperature();
+
+  // Lecturas para el sensor DHT22
+  float humidityDHT22 = dht22.readHumidity();
+  float temperatureDHT22 = dht22.readTemperature();
+
+  // Realiza cualquier otra operación que necesites con los datos de los sensores
+
+  // Ejemplo de uso de los datos del sensor DHT11
+  Serial.print("DHT11 Humidity: ");
+  Serial.print(humidityDHT11);
+  Serial.print("% - DHT11 Temperature: ");
+  Serial.println(temperatureDHT11);
+
+  // Ejemplo de uso de los datos del sensor DHT22
+  Serial.print("DHT22 Humidity: ");
+  Serial.print(humidityDHT22);
+  Serial.print("% - DHT22 Temperature: ");
+  Serial.println(temperatureDHT22);
+  temperatureDHT -= 1.0;
+  humidity -= (humidity * 0.0);
+
+  int buttonStateUp = digitalRead(buttonUpPin);
+  int buttonStateDown = digitalRead(buttonDownPin);
+  int enterButtonState = digitalRead(enterButtonPin); // Leer el estado del botón enter
+  int skypeButtonState = digitalRead(skypeButtonPin); // Leer el estado del botón Skype
+
+  
+
+  if (enterButtonState == HIGH && lastEnterButtonState == LOW) {
+    configurationMode = !configurationMode;
+     // fanMode = false;  // Eliminando esta línea
+    delay(20);
+  }
+
+  
+
+  if (skypeButtonState == HIGH && lastSkypeButtonState == LOW) {
+    configurationMode = false;
+     // fanMode = false;  // Eliminando esta línea
+    delay(20);
+  }
+
+ 
+
+  if (configurationMode) {
+    if (buttonStateUp == HIGH && lastButtonStateUp == LOW) {
+      temperatureSetpoint++;
+      delay(20);
+    } else if (buttonStateDown == HIGH && lastButtonStateDown == LOW) {
+      temperatureSetpoint--;
+      delay(20);
+    }
+  } else {
+    if (buttonStateUp == HIGH && lastButtonStateUp == LOW) {
+      lineToShow++;
+      delay(20);
+    } else if (buttonStateDown == HIGH && lastButtonStateDown == LOW) {
+      lineToShow--;
+      delay(20);
+    }
+
+    lineToShow = constrain(lineToShow, 0, 3);
+
+    if (lineToShow >= 0 && lineToShow <= 3 && !fanMode) {  // Cambiado de: (lineToShow == 0 && !fanMode)
+      
+      fanMode = true;
+    }
+
+    if (lineToShow >= 0 && lineToShow <= 3 && fanMode) {
+      float tempDiff = temperatureDHT22 - temperatureDHT11;
+
+      
+
+      // Ajuste: Verificar si la temperatura interior es mayor o igual a la consigna
+      //         o si la diferencia de temperatura entre el interior y el exterior es negativa
+      if (temperatureDHT11 >= temperatureSetpoint || tempDiff < 0) {
+        
+        digitalWrite(RELAY_PIN, LOW);
+        
+      } else {
+        
+        digitalWrite(RELAY_PIN, HIGH);
+        
+      }
+    } else {
+      
+      fanMode = false;  // Asegurarse de que el ventilador se apague si no está en modo 0
+    }
+  }
+
+  
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+
+  switch (lineToShow) {
+    case 0:
+      lcd.print("TEMP CON ");
+      if (temperatureSetpoint >= 0) {
+        lcd.print("+");
+      } else {
+        lcd.print("-");
+      }
+      lcd.print(abs(temperatureSetpoint), 1);
+      break;
+    case 1:
+      lcd.print("TEM1 INT ");
+      if (temperatureDHT11 >= 0) {
+        lcd.print("+");
+      } else {
+        lcd.print("-");
+      }
+      lcd.print(abs(temperatureDHT11), 1);
+      break;
+    case 2:
+      lcd.print("TEM2 EXT ");
+      if (temperatureDHT22 >= 0) {
+        lcd.print("+");
+      } else {
+        lcd.print("-");
+      }
+      lcd.print(abs(temperatureDHT22), 1);
+      break;
+    case 3:
+      lcd.print("HUM1 INT ");
+      if (humidity < 100) {
+        lcd.print(" ");
+      }
+      lcd.print(humidity, 0);
+      lcd.print("%");
+      break;
+  }
+
+  lcd.setCursor(15, 0);
+
+  if (configurationMode) {
+    lcd.print(">");
+  } else if (fanMode && lineToShow == 0) {
+    lcd.print("*");
+  }
+
+  lcd.setCursor(0, 1);
+
+  switch (lineToShow) {
+    case 0:
+      lcd.print("TEM1 INT ");
+      if (temperatureDHT11 >= 0) {
+        lcd.print("+");
+      } else {
+        lcd.print("-");
+      }
+      lcd.print(abs(temperatureDHT11), 1);
+      break;
+    case 1:
+      lcd.print("TEM2 EXT ");
+      if (temperatureDHT22 >= 0) {
+        lcd.print("+");
+      } else {
+        lcd.print("-");
+      }
+      lcd.print(abs(temperatureDHT22), 1);
+      break;
+    case 2:
+      lcd.print("HUM1 INT ");
+      if (humidity < 100) {
+        lcd.print(" ");
+      }
+      lcd.print(humidity, 0);
+      lcd.print("%");
+      break;
+    case 3:
+      break;
+  }
+
+  lastButtonStateUp = buttonStateUp;
+  lastButtonStateDown = buttonStateDown;
+  lastEnterButtonState = enterButtonState;
+  lastSkypeButtonState = skypeButtonState;
